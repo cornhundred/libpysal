@@ -354,6 +354,27 @@ def get_single_faces(triangles_is):
     single_faces = nb_mask_faces(mask, faces)
     return single_faces
 
+def calc_circumcirle_radii(triangles):
+    """
+    Calculate circumcircle radii from triangles
+    """
+    a_pts = triangles[:, 0, :]
+    b_pts = triangles[:, 1, :]
+    c_pts = triangles[:, 2, :]
+    radii = r_circumcircle_triangle(a_pts, b_pts, c_pts)
+
+    return radii
+
+def reduce_triangles(triangles, triangle_metrics, metric_thresh):
+    """
+    Reduce the set of Delaunay triangles using criteria: alpha, radius, length
+    """
+
+    # triangles_reduced = triangles[radii < 1 / alpha]
+    triangles_reduced = triangles[triangle_metrics < metric_thresh]
+
+    return triangles_reduced
+
 
 @requires("geopandas", "shapely")
 def _alpha_geoms(alpha, triangles, radii, xys):
@@ -418,7 +439,9 @@ def _alpha_geoms(alpha, triangles, radii, xys):
     from shapely.ops import polygonize
     from geopandas import GeoSeries
 
-    triangles_reduced = triangles[radii < 1 / alpha]
+    # reduce triangles using the alpha threshold
+    triangles_reduced = reduce_triangles(triangles, radii, 1/alpha)
+
     outer_triangulation = get_single_faces(triangles_reduced)
     face_pts = xys[outer_triangulation]
     geoms = GeoSeries(list(polygonize(list(map(LineString, face_pts)))))
@@ -478,10 +501,7 @@ def alpha_shape(xys, alpha):
         return ops.unary_union([geom.Point(xy) for xy in xys]).convex_hull.buffer(0)
     triangulation = spat.Delaunay(xys)
     triangles = xys[triangulation.simplices]
-    a_pts = triangles[:, 0, :]
-    b_pts = triangles[:, 1, :]
-    c_pts = triangles[:, 2, :]
-    radii = r_circumcircle_triangle(a_pts, b_pts, c_pts)
+    radii = calc_circumcirle_radii(triangles)
     del triangles, a_pts, b_pts, c_pts
     geoms = _alpha_geoms(alpha, triangulation.simplices, radii, xys)
     geoms = _filter_holes(geoms, xys)
@@ -611,10 +631,7 @@ def alpha_shape_auto(
         return alpha_shape
     triangulation = spat.Delaunay(xys)
     triangles = xys[triangulation.simplices]
-    a_pts = triangles[:, 0, :]
-    b_pts = triangles[:, 1, :]
-    c_pts = triangles[:, 2, :]
-    radii = r_circumcircle_triangle(a_pts, b_pts, c_pts)
+    radii = calc_circumcirle_radii(triangles)
     radii[np.isnan(radii)] = 0  # "Line" triangles to be kept for sure
     del triangles, a_pts, b_pts, c_pts
     radii_sorted_i = radii.argsort()
